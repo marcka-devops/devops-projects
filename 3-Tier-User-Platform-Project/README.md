@@ -106,14 +106,43 @@ $env:GRAFANA_ADMIN_PASSWORD = "<choose-a-password>"
 │   └── cluster/               Cluster-wide resources (EBS StorageClass)
 ├── monitoring/                Helm values and deploy script for Prometheus, Loki, Alloy, Grafana
 ├── iam/                       IAM policies and the OIDC trust policy
+├── scripts/                   provision.sh and teardown.sh for the AWS infrastructure
 ├── .github/workflows/         QA and production pipelines
 └── sonar.project.properties   SonarQube configuration
 ```
 
 ## Running it yourself
 
-**Prerequisites:** an EKS cluster with the AWS Load Balancer Controller, EBS CSI driver and External
-Secrets Operator installed; an ACM certificate for your domain; and these GitHub Actions settings:
+### 1. Provision the AWS infrastructure
+
+[`scripts/provision.sh`](scripts/provision.sh) builds everything the pipelines deploy into, and is safe to re-run:
+
+1. EKS cluster with a managed node group (Amazon Linux 2023)
+2. EBS CSI driver and a gp3 `StorageClass`
+3. AWS Load Balancer Controller
+4. External Secrets Operator
+5. MySQL credentials in AWS Secrets Manager
+6. `qa` and `prod` namespaces, each with an IAM role that can read only its own secret
+7. GitHub Actions OIDC provider and the QA/PROD deploy roles, with EKS access limited to each namespace
+8. Docker Hub pull secret and MySQL in both namespaces
+9. ACM certificates (optional)
+
+Set `GITHUB_OWNER`, `GITHUB_REPO` and the other values at the top of the script, then:
+
+```bash
+export MYSQL_ROOT_PASSWORD='<choose>' MYSQL_PASSWORD='<choose>' DOCKERHUB_USERNAME='<user>' DOCKERHUB_TOKEN='<token>'
+bash scripts/provision.sh
+```
+
+Passwords and tokens are read from the environment and never written to a file. When the script finishes it
+prints the role ARNs for the GitHub secrets below and the command for the monitoring stack. The SonarQube
+server and DNS zones are not created by the script.
+
+[`scripts/teardown.sh`](scripts/teardown.sh) deletes everything again, asking you to type the cluster name first.
+
+### 2. Configure GitHub Actions
+
+The pipelines need these repository settings:
 
 | Name | Type | Purpose |
 |------|------|---------|
@@ -126,7 +155,7 @@ Secrets Operator installed; an ACM certificate for your domain; and these GitHub
 Files under `iam/` and `monitoring/` use placeholders such as `<AWS_ACCOUNT_ID>`; replace them with your
 own values. The ingress manifests reference this project's ACM certificates and domains, so change those too.
 
-**Run locally** (needs a MySQL instance):
+### 3. Run locally (needs a MySQL instance)
 
 ```bash
 cd client && npm install && npm run build
